@@ -1,0 +1,379 @@
+#! /bin/sh
+#!buildShellBin path=attr:coreutils:curl:gawk:gnuplot:gnused:jq
+#
+# NAME
+#       wetter - client for api.weather.mg
+#
+# SYNOPSIS
+#       wetter [LONGITUDE,LATITUDE]
+#
+# ENVIRONMENT
+#       WETTER_CACHE_DIR
+#             If set, the specified location will be used to cache HTTP
+#             responses.
+#
+#       WETTER_API_ROOT_URL
+#       WETTER_TOKEN_URL
+#
+#       WETTER_LOCATION
+#
+# SEE ALSO
+#       API documentation: https://api.weather.mg/
+#
+
+set -efu
+
+# main [LONGITUDE,LATITUDE]
+main() {
+  locatedAt=${WETTER_LOCATION-13.42013,52.51297} # default: c-base
+
+  if test $# = 1; then
+    locatedAt=$1
+  fi
+
+  token_url=${WETTER_TOKEN_URL-https://api.weatherpro.com/v1/token/weather}
+  api_root_url=${WETTER_API_ROOT_URL-https://point-forecast-weatherpro.meteogroup.com}
+
+  cache_dir=${WETTER_CACHE_DIR-}
+  if test -z "$cache_dir"; then
+    debug "no cache directory set: caching disabled"
+    token_cache=
+  elif ! test -d "$cache_dir"; then
+    debug "cache directory $cache_dir does not exist: caching disabled"
+    token_cache=
+  else
+    token_cache=$WETTER_CACHE_DIR/api.weatherpro.com%1Fv1%1Ftoken%1Fweather
+  fi
+
+  token=$(get_token "$token_url" "$token_cache")
+
+  fields=$(jq -nr '
+    [
+      #"meteoGroupStationId",
+      "maxAirTemperatureInCelsius",
+      "minAirTemperatureInCelsius",
+      "precipitationAmountInMillimeter",
+      "sunshineDurationInMinutes",
+      ""
+    ] |
+    join(",")
+  ')
+
+  validFrom=$(date -d 'TZ="Europe/Berlin" - 48 hours' --utc +'%Y-%m-%dT%H:%M:%S.%3NZ')
+  validUntil=$(date -d "TZ=\"Europe/Berlin\" + $(( 5 * 24 )) hours" --utc +'%Y-%m-%dT%H:%M:%S.%3NZ')
+
+  t0=$(date -d 'TZ="Europe/Berlin" - 0 days 00:00' +'%Y-%m-%dT%H:%M:%S.%3NZ')
+  t1=$(date -d 'TZ="Europe/Berlin" + 4 days 00:00' +'%Y-%m-%dT%H:%M:%S.%3NZ')
+
+	curl -fsS \
+			-H "authorization: Bearer $token" \
+      -o /tmp/forecast.json \
+			"https://point-forecast-weatherpro.meteogroup.com/search?fields=$fields&locatedAt=$locatedAt&validPeriod=PT0S,PT1H,PT3H,PT6H,PT12H,PT24H&validFrom=$validFrom&validUntil=$validUntil&timezone=UTC"
+
+	#curl -fsS \
+	#		-H "authorization: Bearer $token" \
+  #    -o /tmp/forecastPT3H.json \
+	#		"https://point-forecast-weatherpro.meteogroup.com/search?fields=$fieldsPT3H&locatedAt=$locatedAt&validPeriod=PT3H&validFrom=$validFrom&validUntil=$validUntil&timezone=UTC"
+
+	#curl -fsS \
+	#		-H "authorization: Bearer $token" \
+  #    -o /tmp/forecastPT6H.json \
+	#		"https://point-forecast-weatherpro.meteogroup.com/search?fields=$fieldsPT6H&locatedAt=$locatedAt&validPeriod=PT6H&validFrom=$validFrom&validUntil=$validUntil&timezone=UTC"
+
+
+  < /tmp/forecast.json > /tmp/forecast-temperatures.tsv \
+  jq -r '
+    .forecasts[] |
+    select((.maxAirTemperatureInCelsius != null) and (.minAirTemperatureInCelsius != null) and (.validPeriod == "PT3H")) |
+    ( (.maxAirTemperatureInCelsius + .minAirTemperatureInCelsius) / 2 ) as $avg |
+    [.validFrom, .minAirTemperatureInCelsius, .maxAirTemperatureInCelsius, $avg, $avg ] |
+    @tsv
+  '
+
+  #jq -r '.forecasts[] | [.validFrom, .validUntil, .precipitationAmountInMillimeter, .sunshineDurationInMinutes] | @tsv' /tmp/forecastPT6H.json > /tmp/forecastPT6H.tsv
+
+  jq -r '
+    .forecasts |
+    map(select((.precipitationAmountInMillimeter != null) and (.validPeriod == "PT1H")))[] |
+    [.validFrom, .validUntil, .precipitationAmountInMillimeter] |
+    @tsv
+  ' /tmp/forecast.json > /tmp/forecast-precipitation.tsv
+
+  jq -r '
+    .forecasts |
+    map(select((.sunshineDurationInMinutes != null) and (.validPeriod == "PT1H")))[] |
+    [.validFrom, .validUntil, .sunshineDurationInMinutes] |
+    @tsv
+  ' /tmp/forecast.json > /tmp/forecast-sunshine.tsv
+
+	now=$(date -Is)
+
+  lines=$(
+    lines=$((LINES - 2))
+    max_lines=40
+    min_lines=20
+    if test $lines -gt $max_lines; then
+      echo $max_lines
+    elif test $lines -lt $min_lines; then
+      echo $min_lines
+    else
+      echo $lines
+    fi
+  )
+
+  # Ideally we would like 1 column per hour
+  # 48+5*24 = 168
+  # + 2*2 + 2*4 # y markings
+  # + 13 # colorbox
+  columns=$(
+    columns=$COLUMNS
+    max_columns=200
+    min_columns=80
+    if test $columns -gt $max_columns; then
+      echo $max_columns
+    elif test $columns -lt $min_columns; then
+      echo $min_columns
+    else
+      echo $columns
+    fi
+  )
+
+  #| sed 's/-/─/g; s/|/│/g; s/+/┼/g'
+	gnuplot <<EOF | sed '1d'
+    set terminal dumb size $columns,$lines enhanced aspect 2,1 ansirgb
+
+    #set terminal sixelgd enhanced truecolor butt size $((COLUMNS * 3)),$(( (LINES-1) * 13))
+
+    #set terminal pngcairo size 1200,600 background rgb "#404040"
+    #set output "/tmp/check.png"
+
+    #set key right top
+    unset key
+
+    # Compute stats for column 2 (Min Temp)
+    ## Don't try to stats the time column, only the numeric ones
+    #stats '/tmp/temperatures.tsv' using 2 name 'MIN' nooutput
+    #stats '/tmp/temperatures.tsv' using 3 name 'MAX' nooutput
+
+    unset border
+    #unset ytics
+
+    #replot
+    #set output
+
+
+
+
+
+		set xdata time
+		set timefmt "%Y-%m-%dT%H:%M:%S+01:00"
+		#set format x "%m-%d %Hh"
+    set format x "%m-%d %a"
+    #set format x "%H"
+    #set xtics $t0, 60, $t1               # 24h spacing
+    #set xtics $t0, 86400
+    ##set mxtics 4
+
+    unset ydata
+    unset y2data          # critical: ensures right axis is numeric
+    set y2range [0:10]    # force correct numeric range
+
+    # Major tics every 24h (86400 seconds)
+    set xtics "$t0", 86400, "$t1"
+    #set xtics "$t0", 10800
+    #set xtics "$t0", 43200
+
+    set y2tics
+    set y2range [0:60] # minutes of sunshine per hour
+    #set format y2 "%g"
+
+    #set boxwidth 21600 absolute   # 6 hours = 6*3600 = 21600 seconds
+    set boxwidth 3600 absolute   # PT1H
+    set style fill solid
+
+
+
+    # Minor tics: 3h = 10800 seconds
+    set mxtics 4   # 86400 / 10800 = 8 minor divisions per day
+
+		#set title "Forecast Temperatures"
+    #set timefmt "%Y-%m-%dT%H:%M:%S+01:00"
+    #set format x "%m-%d\n%Hh"
+    #set xtics rotate
+		#set ylabel "°C"
+		#set xlabel "Time"
+
+    set style line 1 lc rgb "#FF6666"
+    set style line 2 lc rgb "#6666FF"
+
+
+    set style line 5 lc rgb "#707070" #lw 1 dt solid
+    set style line 6 lc rgb "#303030" #lw 1 dt 2
+    set style line 7 lc rgb "magenta" #lw 1 dt 2
+
+    set ytics nomirror
+
+    set grid ytics ls 7
+    set grid xtics mxtics ls 5, ls 6
+
+
+    # Light rain/drizzle:
+    #   Often between 0.1–1.0 mm per hour.
+    #   Common in autumn and winter frontal systems.
+    # 
+    # Moderate rain:
+    #   Around 1–5 mm per hour.
+    #   Typical of steady showers or longer rain events.
+    # 
+    # Heavy rain (convective storms):
+    #   Can reach 10–20 mm per hour.
+    #   Thunderstorms in summer can briefly exceed this.
+    # 
+    # Extreme downpours:
+    #   Localized convective cells may produce >30 mm per hour, though this is rare.
+    #   Such events are usually short-lived but can cause flash flooding.
+    precipitation_scaling_factor = 20
+
+    scale_precipitation(x) = x * precipitation_scaling_factor
+
+    set y2tics ()
+    do for [i=0:60:10] {
+      set y2tics add (sprintf(" %1.1f", i * 100.0 / precipitation_scaling_factor / 100.0) i)
+    }
+
+    #set style fill solid 0.4 noborder
+
+
+    #set arrow from graph 0, first 0 to graph 1, first 0 nohead lc rgb "red"
+
+		set arrow from "$now", graph 0 \
+							to   "$now", graph 1 \
+							nohead lc rgb "red"
+
+    set palette defined (-30 "black", -20 "purple", -10 "blue", 0 "cyan", 10 "green", 20 "yellow", 25 "orange", 35 "red", 45 "pink", 50 "white")
+    #set palette defined ( -20 "#8B00FF", 0 "#0000FF", 20 "#FFA500", 40 "#FF0000" ) # classic cold→hot
+    #set palette defined ( -20 "#00FFFF", 0 "#FFFFFF", 20 "#FFFF00", 40 "#B22222" ) # ice → neutral → heat
+    #set palette defined ( -20 "#00008B", -10 "#87CEFA", 0 "#00FF00", 20 "#FFD700", 40 "#FF4500" ) # mimics meteorological maps
+    set cbrange [-30:50]
+    #set cbextend   # values < -20 stay violet, > 40 stay red
+
+    # hide palette
+    unset colorbox
+
+    # Enable pm3d for smooth fills (no border, 50% opacity for band effect)
+    #set pm3d map flush begin interpolate 2,2  # 'interpolate 2,2' smooths the band
+    #set style pm3d solid opacity 0.6 noborder
+
+    #set style fill solid 0.5 noborder
+
+    # 40E0D0 more luminous
+    # 008B8B darker, more subdued
+    # 00CED1 DarkTurquoise
+		plot \
+      '/tmp/forecast-sunshine.tsv' using 1:3:1:2:(0):3 axes x1y2 with boxxyerror lc rgb "yellow" title 'Sunshine (minutes)', \
+        \
+        '/tmp/forecast-temperatures.tsv' using 1:2:(column(2)) with linespoints lc palette title 'Min Temp', \
+                                      '' using 1:3:(column(3)) with linespoints lc palette title 'Max Temp', \
+        '/tmp/forecast-precipitation.tsv'  using 1:(scale_precipitation(\$3)):1:2:(0):(scale_precipitation(\$3)) axes x1y2 with boxxyerror lc rgb "#A0C0D0" title 'Precipitation (mm)'
+EOF
+  return
+  cat<<\EOF
+      # sonne von oben
+      '/tmp/forecast-sunshine.tsv' using 1:(60 - \$3):1:2:(60):(60 - \$3) axes x1y2 with boxxyerror lc rgb "yellow" title 'Sunshine (minutes)', \
+
+
+        #'/tmp/forecast-precipitation.tsv'  using 1:3 axes x1y2 with linespoints lc rgb "#A0C0D0" title 'Precipitation (mm)', \
+        #'/tmp/forecast-temperatures.tsv' using 1:2:3 with filledcurves fc '#202020' notitle, \
+        #'/tmp/forecastPT3H.tsv' using 1:2:3 with filledcurves notitle, \
+    #using 1:2:3 with filledcurve lc palette notitle, \
+    #using 1:2 with linespoints ls 2 title 'Min Temp', \
+		#		 '' using 1:3 with linespoints ls 1 title 'Max Temp'
+         #'' using 1:2 every ::MIN_index_min::MIN_index_min with points pt 7 lc rgb "#ccccff" title "Abs Min", \
+         #'' using 1:3 every ::MAX_index_max::MAX_index_max with points pt 7 lc rgb "#ffcccc" title "Abs Max", \
+         #
+
+EOF
+}
+
+
+
+debug() {
+  echo "$*" >&2
+}
+
+error() {
+  echo "$0: error: $1" >&2
+  return 1
+}
+
+
+# get_header_field FIELD_NAME < HEADER
+# Read headers as dumped by curl from stdin and print the selected header field
+# content to stdout.
+get_header_field() {
+  split_at ' *\r *' | awk -F ': ' -v key="$1" '$1==key {print $2}'
+}
+
+# get_field DELIMITER FIELD_NAME
+get_field() {
+  awk -F "$1" -v name="$2" '$1==name {print $2}'
+}
+
+# Split stdin into lines 
+# TODO escape ERE magic and /
+split_at() {
+  sed -r "s/$1/\\n/g"
+}
+
+get_max_age() {
+  split_at ' *\r *' | get_field ' *: *' cache-control | split_at ' *, *' | get_field = max-age
+}
+
+# get_token URL CACHE_PATH
+get_token() {
+  if test -n "$2"; then
+    if is_fresh_token "$2"; then
+      debug "token is fresh"
+      cat "$2"
+    else
+      debug "refresh token"
+      if refresh_token "$1" "$2"; then
+        cat "$2"
+      else
+        error "failed to refresh token"
+      fi
+    fi
+  else
+    debug "fetching token" # caching disabled
+    fetch_token "$1"
+  fi
+}
+
+# is_fresh_token PATH
+is_fresh_token() {
+  test -e "$1" &&
+    (
+      max_age=$(attr -q -g max-age "$1")
+      mtime=$(stat -c %Y "$1")
+      now=$(date +%s)
+      test $((mtime + max_age)) -gt $now
+    )
+}
+
+# refresh_token URL CACHE_PATH
+refresh_token() {
+  (
+    header=$(curl -fsS "$1" -o "$2" -D-)
+    #max_age=$(echo $header split_at ' *\r *' | get_field ' *: *' cache-control | split_at ' *, *' | get_field = max-age)
+
+    max_age=$(echo $header | split_at '\r ' | get_field ': ' cache-control | split_at ', ' | get_field = max-age)
+    attr -q -s max-age -V "$max_age" "$2"
+  )
+}
+
+# fetch_token URL
+fetch_token() {
+  curl -fsS "$1"
+}
+
+main "$@"
