@@ -11,6 +11,8 @@
 #       WETTER_CACHE_DIR
 #             If set, the specified location will be used to cache HTTP
 #             responses.
+#             If not set, fall back to XDG_CACHE_HOME/wetter or $HOME/.cache/wetter.
+#             If set to empty, caching is disabled.
 #
 #       WETTER_API_ROOT_URL
 #       WETTER_TOKEN_URL
@@ -34,15 +36,31 @@ main() {
   token_url=${WETTER_TOKEN_URL-https://api.weatherpro.com/v1/token/weather}
   api_root_url=${WETTER_API_ROOT_URL-https://point-forecast-weatherpro.meteogroup.com}
 
-  cache_dir=${WETTER_CACHE_DIR-}
-  if test -z "$cache_dir"; then
-    debug "no cache directory set: caching disabled"
-    token_cache=
-  elif ! test -d "$cache_dir"; then
-    debug "cache directory $cache_dir does not exist: caching disabled"
-    token_cache=
+  get_xdg_cache_dir() {
+    fallback_cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/wetter"
+    mkdir -p "$fallback_cache_dir"
+    echo "$fallback_cache_dir"
+  }
+
+  if test -n "${WETTER_CACHE_DIR+x}"; then
+    if test -d "$WETTER_CACHE_DIR"; then
+      cache_dir="$WETTER_CACHE_DIR"
+    else
+      if test -n "${XDG_CACHE_HOME+x}"; then
+        cache_dir=$(get_xdg_cache_dir)
+      else
+        debug "WETTER_CACHE_DIR is set to '$WETTER_CACHE_DIR' but the directory does not exist; caching disabled"
+        cache_dir=""
+      fi
+    fi
   else
-    token_cache=$WETTER_CACHE_DIR/api.weatherpro.com%1Fv1%1Ftoken%1Fweather
+    cache_dir=$(get_xdg_cache_dir)
+  fi
+
+  if test -n "$cache_dir"; then
+    token_cache="$cache_dir/api.weatherpro.com%1Fv1%1Ftoken%1Fweather"
+  else
+    token_cache=""
   fi
 
   token=$(get_token "$token_url" "$token_cache")
