@@ -238,15 +238,15 @@ main() {
     # Light rain/drizzle:
     #   Often between 0.1–1.0 mm per hour.
     #   Common in autumn and winter frontal systems.
-    # 
+    #
     # Moderate rain:
     #   Around 1–5 mm per hour.
     #   Typical of steady showers or longer rain events.
-    # 
+    #
     # Heavy rain (convective storms):
     #   Can reach 10–20 mm per hour.
     #   Thunderstorms in summer can briefly exceed this.
-    # 
+    #
     # Extreme downpours:
     #   Localized convective cells may produce >30 mm per hour, though this is rare.
     #   Such events are usually short-lived but can cause flash flooding.
@@ -337,7 +337,7 @@ get_field() {
   awk -F "$1" -v name="$2" '$1==name {print $2}'
 }
 
-# Split stdin into lines 
+# Split stdin into lines
 # TODO escape ERE magic and /
 split_at() {
   sed -r "s/$1/\\n/g"
