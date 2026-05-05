@@ -218,7 +218,7 @@ main() {
 
 
     # Minor tics: 3h = 10800 seconds
-    set mxtics 4   # 86400 / 10800 = 8 minor divisions per day
+    unset mxtics   # Only show major grid lines (one per day)
 
 		#set title "Forecast Temperatures"
     #set timefmt "%Y-%m-%dT%H:%M:%S+01:00"
