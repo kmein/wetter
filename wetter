@@ -168,11 +168,11 @@ main() {
     set y2tics textcolor rgb "black"
     set xlabel "Time" textcolor rgb "black"
     set ylabel "Temperature (°C)" textcolor rgb "black"
-    set y2label "Precipitation (mm) / Sunshine (min)" textcolor rgb "black"
+    set y2label "Precipitation (mm)" textcolor rgb "black"
     set output "$img_file"
 
     #set key right top
-    set key right top spacing 1.5
+    set key right top spacing 1.5 box
 
     # Compute stats for column 2 (Min Temp)
     ## Don't try to stats the time column, only the numeric ones
