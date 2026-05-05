@@ -6,5 +6,11 @@
   outputs = inputs: {
     packages.x86_64-linux.default = inputs.nixpkgs.legacyPackages.x86_64-linux.callPackage ./. {};
     packages.x86_64-linux.wetter = inputs.nixpkgs.legacyPackages.x86_64-linux.callPackage ./. {};
+    
+    overlays = {
+      default = final: self: {
+        wetter = final.callPackage ./. {};
+      };
+    };
   };
 }
