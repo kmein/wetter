@@ -231,8 +231,8 @@ main() {
     set style line 2 lc rgb "#6666FF"
 
 
-    set style line 5 lc rgb "#707070" lw 1 dt solid  # Major grid lines (daily boundaries)
-    set style line 6 lc rgb "#303030" lw 2 dt 2        # Thicker lines for day separation
+    set style line 5 lc rgb "#707070" lw 1 dt solid  # Regular grid lines
+    set style line 6 lc rgb "#303030" lw 2 dt solid  # Thicker lines for day separation
     set style line 7 lc rgb "magenta" lw 1 dt 2        # Legend border
 
     set ytics nomirror
