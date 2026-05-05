@@ -296,9 +296,9 @@ main() {
 		plot \
       '/tmp/forecast-sunshine.tsv' using 1:3:1:2:(0):3 axes x1y2 with boxxyerror lc rgb "yellow" title 'Sunshine (minutes)', \
         \
+        '/tmp/forecast-precipitation.tsv'  using 1:(scale_precipitation(\$3)):1:2:(0):(scale_precipitation(\$3)) axes x1y2 with boxxyerror lc rgb "#A0C0D0" title 'Precipitation (mm)', \
         '/tmp/forecast-temperatures.tsv' using 1:2:(column(2)) with linespoints lw 2 ps 1 pt 6 lc palette title 'Min Temp', \
-                                      '' using 1:3:(column(3)) with linespoints lw 2 ps 1 pt 7 lc palette title 'Max Temp', \
-        '/tmp/forecast-precipitation.tsv'  using 1:(scale_precipitation(\$3)):1:2:(0):(scale_precipitation(\$3)) axes x1y2 with boxxyerror lc rgb "#A0C0D0" title 'Precipitation (mm)'
+                                      '' using 1:3:(column(3)) with linespoints lw 2 ps 1 pt 7 lc palette title 'Max Temp'
 
     # After plotting, display the image (nsxiv is now available via Nix)
     system("nsxiv '$img_file' || (command -v feh >/dev/null && feh '$img_file') || (command -v display >/dev/null && display '$img_file') || (command -v eog >/dev/null && eog '$img_file') || echo 'Image created successfully: $img_file'")
