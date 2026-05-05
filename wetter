@@ -172,7 +172,7 @@ main() {
     set output "$img_file"
 
     #set key right top
-    set key right top
+    set key right top spacing 1.5
 
     # Compute stats for column 2 (Min Temp)
     ## Don't try to stats the time column, only the numeric ones
