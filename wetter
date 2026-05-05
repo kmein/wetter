@@ -36,21 +36,21 @@ main() {
   token_url=${WETTER_TOKEN_URL-https://api.weatherpro.com/v1/token/weather}
   api_root_url=${WETTER_API_ROOT_URL-https://point-forecast-weatherpro.meteogroup.com}
 
-  get_xdg_cache_dir() {
-    fallback_cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/wetter"
+  get_xdg_cache_dir() (
+    fallback_cache_dir=${XDG_CACHE_HOME-$HOME/.cache}/wetter
     mkdir -p "$fallback_cache_dir"
     echo "$fallback_cache_dir"
-  }
+  )
 
   if test -n "${WETTER_CACHE_DIR+x}"; then
     if test -d "$WETTER_CACHE_DIR"; then
-      cache_dir="$WETTER_CACHE_DIR"
+      cache_dir=$WETTER_CACHE_DIR
     else
       if test -n "${XDG_CACHE_HOME+x}"; then
         cache_dir=$(get_xdg_cache_dir)
       else
         debug "WETTER_CACHE_DIR is set to '$WETTER_CACHE_DIR' but the directory does not exist; caching disabled"
-        cache_dir=""
+        cache_dir=
       fi
     fi
   else
@@ -58,9 +58,9 @@ main() {
   fi
 
   if test -n "$cache_dir"; then
-    token_cache="$cache_dir/api.weatherpro.com%1Fv1%1Ftoken%1Fweather"
+    token_cache=$cache_dir/api.weatherpro.com%1Fv1%1Ftoken%1Fweather
   else
-    token_cache=""
+    token_cache=
   fi
 
   token=$(get_token "$token_url" "$token_cache")
@@ -126,44 +126,50 @@ main() {
 
 	now=$(date -Is)
 
-  lines=$(
-    lines=$((LINES - 2))
-    max_lines=40
-    min_lines=20
-    if test $lines -gt $max_lines; then
-      echo $max_lines
-    elif test $lines -lt $min_lines; then
-      echo $min_lines
-    else
-      echo $lines
-    fi
-  )
+  lines=${LINES-24}
+  lines=$((lines - 2))
+  max_lines=40
+  min_lines=20
+  if test $lines -gt $max_lines; then
+    lines=$max_lines
+  elif test $lines -lt $min_lines; then
+    lines=$min_lines
+  fi
 
   # Ideally we would like 1 column per hour
   # 48+5*24 = 168
   # + 2*2 + 2*4 # y markings
   # + 13 # colorbox
-  columns=$(
-    columns=$COLUMNS
-    max_columns=200
-    min_columns=80
-    if test $columns -gt $max_columns; then
-      echo $max_columns
-    elif test $columns -lt $min_columns; then
-      echo $min_columns
-    else
-      echo $columns
-    fi
-  )
+  columns=${COLUMNS-80}
+  max_columns=200
+  min_columns=80
+  if test $columns -gt $max_columns; then
+    columns=$max_columns
+  elif test $columns -lt $min_columns; then
+    columns=$min_columns
+  fi
+
+  # Create temporary image file
+  img_file=$(mktemp --suffix=.png)
+  # Don't clean up immediately - let the image viewer handle it
+  # trap "rm -f '$img_file'" EXIT
+  echo "Weather forecast image will be saved to: $img_file"
 
   #| sed 's/-/─/g; s/|/│/g; s/+/┼/g'
-	gnuplot <<EOF | sed '1d'
+	gnuplot <<EOF
     set terminal dumb size $columns,$lines enhanced aspect 2,1 ansirgb
 
-    #set terminal sixelgd enhanced truecolor butt size $((COLUMNS * 3)),$(( (LINES-1) * 13))
+    #set terminal sixelgd enhanced truecolor butt size $((columns * 3)),$(( (lines-1) * 13))
 
-    #set terminal pngcairo size 1200,600 background rgb "#404040"
-    #set output "/tmp/check.png"
+    set terminal pngcairo size 1200,600 background rgb "white"
+    set border lc rgb "black"
+    set xtics textcolor rgb "black"
+    set ytics textcolor rgb "black"
+    set y2tics textcolor rgb "black"
+    set xlabel "Time" textcolor rgb "black"
+    set ylabel "Temperature (°C)" textcolor rgb "black"
+    set y2label "Precipitation (mm) / Sunshine (min)" textcolor rgb "black"
+    set output "$img_file"
 
     #set key right top
     unset key
@@ -196,8 +202,8 @@ main() {
     unset y2data          # critical: ensures right axis is numeric
     set y2range [0:10]    # force correct numeric range
 
-    # Major tics every 24h (86400 seconds)
-    set xtics "$t0", 86400, "$t1"
+    # Major tics every 24h (86400 seconds) - include full data range
+    set xtics "$validFrom", 86400, "$validUntil"
     #set xtics "$t0", 10800
     #set xtics "$t0", 43200
 
@@ -293,6 +299,9 @@ main() {
         '/tmp/forecast-temperatures.tsv' using 1:2:(column(2)) with linespoints lc palette title 'Min Temp', \
                                       '' using 1:3:(column(3)) with linespoints lc palette title 'Max Temp', \
         '/tmp/forecast-precipitation.tsv'  using 1:(scale_precipitation(\$3)):1:2:(0):(scale_precipitation(\$3)) axes x1y2 with boxxyerror lc rgb "#A0C0D0" title 'Precipitation (mm)'
+
+    # After plotting, display the image
+    system("(command -v nsxiv >/dev/null && nsxiv '$img_file') || (command -v feh >/dev/null && feh '$img_file') || (command -v display >/dev/null && display '$img_file') || (command -v eog >/dev/null && eog '$img_file') || echo 'Image created successfully: $img_file'")
 EOF
   return
   cat<<\EOF

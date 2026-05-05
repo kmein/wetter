@@ -12,6 +12,7 @@ pkgs.runCommand "wetter-1.0" {
         pkgs.gnuplot
         pkgs.gnused
         pkgs.jq
+        pkgs.imagemagick
       ]}@' \
       < ${./wetter} \
       > $out/bin/wetter
