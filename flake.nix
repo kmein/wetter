@@ -4,13 +4,21 @@
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
   };
   outputs = inputs: {
-    packages.x86_64-linux.default = inputs.nixpkgs.legacyPackages.x86_64-linux.callPackage ./. {};
-    packages.x86_64-linux.wetter = inputs.nixpkgs.legacyPackages.x86_64-linux.callPackage ./. {};
-    
-    overlays = {
-      default = final: self: {
-        wetter = final.callPackage ./. {};
+    packages.x86_64-linux =
+      let
+        pkgs = import inputs.nixpkgs {
+          system = "x86_64-linux";
+          overlays = [
+            inputs.self.overlays.default
+          ];
+        };
+      in
+      {
+        inherit (pkgs) wetter;
+        default = pkgs.wetter;
       };
+    overlays.default = final: prev: {
+      wetter = prev.callPackage ./. { };
     };
   };
 }
